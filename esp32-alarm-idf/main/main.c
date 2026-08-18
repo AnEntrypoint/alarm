@@ -470,14 +470,26 @@ static void alarm_task(void* arg)
     }
     
     int last_pir_state = -1;
+    int last_pir_level1 = -1;
+    int last_pir_level2 = -1;
     int64_t startup_time = esp_timer_get_time() / 1000;
-    
+
     while (1) {
         int pir_level1 = gpio_get_level(PIR_PIN);
         int pir_level2 = gpio_get_level(PIR_PIN2);
         int pir_state = (pir_level1 == 0 || pir_level2 == 0) ? 0 : 1;  // motion if either PIR is active
         int64_t current_time = esp_timer_get_time() / 1000; // Convert to ms
-        
+
+        // Log individual PIR pin changes for debugging which sensor triggered
+        if (pir_level1 != last_pir_level1) {
+            ESP_LOGI(TAG, "GPIO%d (PIR1) changed: %d -> %d", PIR_PIN, last_pir_level1, pir_level1);
+            last_pir_level1 = pir_level1;
+        }
+        if (pir_level2 != last_pir_level2) {
+            ESP_LOGI(TAG, "GPIO%d (PIR2) changed: %d -> %d", PIR_PIN2, last_pir_level2, pir_level2);
+            last_pir_level2 = pir_level2;
+        }
+
         // Log PIR state changes for debugging and update LED
         if (pir_state != last_pir_state) {
             ESP_LOGI(TAG, "PIR state changed: %d -> %d", last_pir_state, pir_state);
