@@ -638,6 +638,8 @@ static void alarm_task(void* arg)
         }
 
         // Real-time LED pulse: purple on any PIR1 edge, green on any PIR2 edge
+        // TEMPORARILY DISABLED to test whether WS2812/RMT activity is coupling noise onto GPIO3
+#if 0
         {
             uint32_t p1 = pir1_edge_count;
             uint32_t p2 = pir2_edge_count;
@@ -656,6 +658,7 @@ static void alarm_task(void* arg)
                 led_pulse_until = 0;
             }
         }
+#endif
         {
             static int64_t last_edge_log = 0;
             if (current_time - last_edge_log > 3000) {
