@@ -543,6 +543,22 @@ static void alarm_task(void* arg)
     io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
     gpio_config(&io_conf);
     
+    // Force a hard reset pulse on the LED data line before handing it to the RMT
+    // driver: hold it LOW for 100ms as a plain GPIO to guarantee the WS2812's
+    // reset threshold is met, in case a prior stuck color needs an unambiguous reset.
+    {
+        gpio_config_t led_reset_conf = {
+            .intr_type = GPIO_INTR_DISABLE,
+            .mode = GPIO_MODE_OUTPUT,
+            .pin_bit_mask = (1ULL << LED_PIN),
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+        };
+        gpio_config(&led_reset_conf);
+        gpio_set_level(LED_PIN, 0);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+
     // Configure WS2812 RGB LED and send a single explicit off frame at boot.
     // Nothing else in the firmware writes to it afterward.
     led_strip_config_t strip_config = {
