@@ -477,7 +477,7 @@ static void alarm_task(void* arg)
     while (1) {
         int pir_level1 = gpio_get_level(PIR_PIN);
         int pir_level2 = gpio_get_level(PIR_PIN2);
-        int pir_state = (pir_level1 == 0 || pir_level2 == 0) ? 0 : 1;  // motion if either PIR is active
+        int pir_state = (pir_level1 == 1 || pir_level2 == 1) ? 0 : 1;  // motion if either PIR is HIGH (standard PIR polarity); pir_state 0 = motion, 1 = idle
         int64_t current_time = esp_timer_get_time() / 1000; // Convert to ms
 
         // Log individual PIR pin changes for debugging which sensor triggered
