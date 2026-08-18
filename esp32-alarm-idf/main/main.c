@@ -17,6 +17,7 @@
 #include "esp_timer.h"
 #include "esp_sntp.h"
 #include "cJSON.h"
+#include "led_strip.h"
 #include "secrets.h"
 
 // Pin Configuration
@@ -542,11 +543,18 @@ static void alarm_task(void* arg)
     io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
     gpio_config(&io_conf);
     
-    // Drive the LED pin low as a plain GPIO to keep it from floating and
-    // showing a stuck/garbage color on the WS2812. LED control is otherwise disabled.
-    io_conf.pin_bit_mask = (1ULL << LED_PIN);
-    gpio_config(&io_conf);
-    gpio_set_level(LED_PIN, 0);
+    // Configure WS2812 RGB LED and send a single explicit off frame at boot.
+    // Nothing else in the firmware writes to it afterward.
+    led_strip_config_t strip_config = {
+        .strip_gpio_num = LED_PIN,
+        .max_leds = 1,
+    };
+    led_strip_rmt_config_t rmt_config = {
+        .resolution_hz = 10 * 1000 * 1000,
+    };
+    led_strip_handle_t led_strip;
+    led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip);
+    led_strip_clear(led_strip);
 
     gpio_set_level(ALARM_CONTROL_PIN, 0);
     
