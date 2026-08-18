@@ -22,7 +22,8 @@
 // Configuration
 #define WIFI_SSID "moonshine"
 #define WIFI_PASSWORD "moonshine"
-#define WEBHOOK_URL "https://discord.com/api/webhooks/1539235298897043466/gPxNgNLnEbZaFdgPEhTUf-mupktQ0xdvOpYlsExpQeE_hPrUxzuWoIV_iwiuq17UY-Ap"
+#define WEBHOOK_URL_PIR1 "https://discord.com/api/webhooks/1539235298897043466/gPxNgNLnEbZaFdgPEhTUf-mupktQ0xdvOpYlsExpQeE_hPrUxzuWoIV_iwiuq17UY-Ap"
+#define WEBHOOK_URL_PIR2 "https://discord.com/api/webhooks/1539329434505453683/xKC_ZdHxAFZMarE-KQZneBYdORMpFMHUDevyeMRysONtjYpU9r9fIABuCyMXH8Pcbd5J"
 
 // Pin Configuration
 #define PIR_PIN GPIO_NUM_4
@@ -61,16 +62,21 @@ static void led_set_color(uint8_t r, uint8_t g, uint8_t b)
     led_strip_refresh(led_strip);
 }
 
-// Alarm state
+// Alarm state (shared: either sensor confirming motion drives the physical alarm)
 static bool alarm_active = false;
 static int64_t alarm_start_time = 0;
-static int64_t last_motion_time = 0;
 
-// Motion confirmation tracking
-static int motion_event_count = 0;
-static int64_t first_motion_time = 0;
-static int64_t motion_start_time = 0;
-static bool continuous_motion = false;
+// Per-sensor motion confirmation tracking, so each sensor reports independently to its own webhook
+typedef struct {
+    int64_t last_motion_time;
+    int motion_event_count;
+    int64_t first_motion_time;
+    int64_t motion_start_time;
+    bool continuous_motion;
+} motion_tracker_t;
+
+static motion_tracker_t pir1_tracker = {0};
+static motion_tracker_t pir2_tracker = {0};
 
 // Diagnostic: interrupt-driven edge counters, cannot miss a pulse regardless of poll timing
 static volatile uint32_t pir1_edge_count = 0;
@@ -106,6 +112,7 @@ static QueueHandle_t webhook_queue;
 typedef struct {
     char event_type[32];
     char timestamp[64];
+    int sensor; // 1 = PIR1 (GPIO4/AM312), 2 = PIR2 (GPIO3)
 } webhook_message_t;
 
 static int wifi_retry_count = 0;
@@ -273,53 +280,61 @@ static void get_current_time_string(char* time_str, size_t max_len)
     }
 }
 
-static void queue_webhook_message(const char* event_type)
+static void queue_webhook_message_for_sensor(const char* event_type, int sensor)
 {
     webhook_message_t msg;
     strncpy(msg.event_type, event_type, sizeof(msg.event_type) - 1);
     msg.event_type[sizeof(msg.event_type) - 1] = '\0';
-    
+    msg.sensor = sensor;
+
     get_current_time_string(msg.timestamp, sizeof(msg.timestamp));
-    
+
     if (xQueueSend(webhook_queue, &msg, 0) != pdTRUE) {
         ESP_LOGW(TAG, "Webhook queue full, dropping message: %s", event_type);
     } else {
-        ESP_LOGI(TAG, "Queued webhook message: %s", event_type);
+        ESP_LOGI(TAG, "Queued webhook message: %s (sensor %d)", event_type, sensor);
     }
 }
 
-static bool send_discord_webhook_with_timestamp(const char* event_type, const char* time_str)
+static void queue_webhook_message(const char* event_type)
+{
+    // Default/system-level events (no specific sensor) go to PIR1's webhook
+    queue_webhook_message_for_sensor(event_type, 1);
+}
+
+static bool send_discord_webhook_with_timestamp(const char* event_type, const char* time_str, int sensor)
 {
     char message[256];
-    
+    const char* sensor_label = (sensor == 2) ? "PIR2" : "PIR1 (AM312)";
+
     if (strcmp(event_type, "alarm_triggered") == 0) {
-        snprintf(message, sizeof(message), 
+        snprintf(message, sizeof(message),
                  "🚨 **ALARM TRIGGERED!** 🚨\n"
-                 "Motion detected by ESP32 alarm system!\n"
-                 "Time: %s", time_str);
+                 "Motion detected by %s!\n"
+                 "Time: %s", sensor_label, time_str);
     } else if (strcmp(event_type, "alarm_stopped") == 0) {
-        snprintf(message, sizeof(message), 
+        snprintf(message, sizeof(message),
                  "✅ Alarm has been deactivated\n"
                  "Time: %s", time_str);
     } else if (strcmp(event_type, "system_started") == 0) {
-        snprintf(message, sizeof(message), 
+        snprintf(message, sizeof(message),
                  "🔌 ESP32 Alarm System Started\n"
                  "System online and monitoring\n"
                  "Time: %s", time_str);
     } else {
-        snprintf(message, sizeof(message), 
+        snprintf(message, sizeof(message),
                  "Alarm event: %s\n"
                  "Time: %s", event_type, time_str);
     }
-    
+
     cJSON *root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "content", message);
     cJSON_AddStringToObject(root, "username", "ESP32 Alarm System");
-    
+
     char *post_data = cJSON_PrintUnformatted(root);
-    
+
     esp_http_client_config_t config = {
-        .url = WEBHOOK_URL,
+        .url = (sensor == 2) ? WEBHOOK_URL_PIR2 : WEBHOOK_URL_PIR1,
         .event_handler = http_event_handler,
         .method = HTTP_METHOD_POST,
         .timeout_ms = 15000,  // Longer timeout for weak signals
@@ -439,7 +454,7 @@ static void webhook_sender_task(void* arg)
                 ESP_LOGI(TAG, "WiFi connected, attempting to send webhook...");
                 
                 // Try to send the webhook
-                if (send_discord_webhook_with_timestamp(msg.event_type, msg.timestamp)) {
+                if (send_discord_webhook_with_timestamp(msg.event_type, msg.timestamp, msg.sensor)) {
                     ESP_LOGI(TAG, "Successfully sent queued webhook: %s", msg.event_type);
                     break; // Success, move to next message
                 } else {
@@ -447,6 +462,64 @@ static void webhook_sender_task(void* arg)
                     vTaskDelay(5000 / portTICK_PERIOD_MS);
                 }
             }
+        }
+    }
+}
+
+static void process_sensor_motion(motion_tracker_t* t, bool motion_now, int64_t current_time,
+        bool startup_grace_period, int sensor)
+{
+    if (motion_now) {
+        if (!t->continuous_motion) {
+            t->continuous_motion = true;
+            t->motion_start_time = current_time;
+        }
+
+        // Check if motion has been continuous for minimum duration
+        if ((current_time - t->motion_start_time) >= MIN_MOTION_DURATION_MS) {
+            if (!startup_grace_period &&
+                (current_time - t->last_motion_time > PIR_DEBOUNCE_MS)) {
+
+                // First motion event or new motion after debounce
+                if (t->motion_event_count == 0 ||
+                    (current_time - t->first_motion_time > MOTION_CONFIRMATION_WINDOW_MS)) {
+                    // Start new confirmation window
+                    t->motion_event_count = 1;
+                    t->first_motion_time = current_time;
+                    ESP_LOGI(TAG, "Sensor %d: motion event 1/%d detected, waiting for confirmation...",
+                            sensor, MOTION_CONFIRMATION_COUNT);
+                } else {
+                    // Additional motion within confirmation window
+                    t->motion_event_count++;
+                    ESP_LOGI(TAG, "Sensor %d: motion event %d/%d detected",
+                            sensor, t->motion_event_count, MOTION_CONFIRMATION_COUNT);
+
+                    // Check if we have enough confirmations
+                    if (t->motion_event_count >= MOTION_CONFIRMATION_COUNT) {
+                        ESP_LOGI(TAG, "Sensor %d: motion confirmed after %d events", sensor, t->motion_event_count);
+                        queue_webhook_message_for_sensor("alarm_triggered", sensor);
+                        t->motion_event_count = 0;  // Reset for next detection
+
+                        if (!alarm_active) {
+                            alarm_active = true;
+                            alarm_start_time = current_time;
+                            gpio_set_level(ALARM_CONTROL_PIN, 1);
+                            ESP_LOGI(TAG, "ALARM ACTIVATED! (triggered by sensor %d)", sensor);
+                        }
+                    }
+                }
+
+                t->last_motion_time = current_time;
+            }
+        }
+    } else {
+        t->continuous_motion = false;
+
+        // Reset motion count if confirmation window expired
+        if (t->motion_event_count > 0 &&
+            (current_time - t->first_motion_time > MOTION_CONFIRMATION_WINDOW_MS)) {
+            ESP_LOGI(TAG, "Sensor %d: motion confirmation window expired, resetting count", sensor);
+            t->motion_event_count = 0;
         }
     }
 }
@@ -589,60 +662,11 @@ static void alarm_task(void* arg)
 
         // Check for startup grace period
         bool startup_grace_period = (current_time - startup_time < STARTUP_GRACE_PERIOD_MS);
-        
-        // Motion detection with confirmation logic
-        if (pir_state == 0) {  // Motion detected by PIR
-            if (!continuous_motion) {
-                continuous_motion = true;
-                motion_start_time = current_time;
-            }
-            
-            // Check if motion has been continuous for minimum duration
-            if ((current_time - motion_start_time) >= MIN_MOTION_DURATION_MS) {
-                if (!startup_grace_period &&
-                    (current_time - last_motion_time > PIR_DEBOUNCE_MS)) {
-                    
-                    // First motion event or new motion after debounce
-                    if (motion_event_count == 0 || 
-                        (current_time - first_motion_time > MOTION_CONFIRMATION_WINDOW_MS)) {
-                        // Start new confirmation window
-                        motion_event_count = 1;
-                        first_motion_time = current_time;
-                        ESP_LOGI(TAG, "Motion event 1/%d detected, waiting for confirmation...", 
-                                MOTION_CONFIRMATION_COUNT);
-                    } else {
-                        // Additional motion within confirmation window
-                        motion_event_count++;
-                        ESP_LOGI(TAG, "Motion event %d/%d detected", 
-                                motion_event_count, MOTION_CONFIRMATION_COUNT);
-                        
-                        // Check if we have enough confirmations
-                        if (motion_event_count >= MOTION_CONFIRMATION_COUNT && !alarm_active) {
-                            alarm_active = true;
-                            alarm_start_time = current_time;
-                            gpio_set_level(ALARM_CONTROL_PIN, 1);
-                            ESP_LOGI(TAG, "ALARM ACTIVATED! (confirmed after %d motion events)", 
-                                    motion_event_count);
-                            
-                            queue_webhook_message("alarm_triggered");
-                            motion_event_count = 0;  // Reset for next detection
-                        }
-                    }
-                    
-                    last_motion_time = current_time;
-                }
-            }
-        } else {  // No motion (pir_state == 1)
-            continuous_motion = false;
 
-            // Reset motion count if confirmation window expired
-            if (motion_event_count > 0 && 
-                (current_time - first_motion_time > MOTION_CONFIRMATION_WINDOW_MS)) {
-                ESP_LOGI(TAG, "Motion confirmation window expired, resetting count");
-                motion_event_count = 0;
-            }
-        }
-        
+        // Motion detection with confirmation logic, tracked independently per sensor
+        process_sensor_motion(&pir1_tracker, pir_level1 == 1, current_time, startup_grace_period, 1);
+        process_sensor_motion(&pir2_tracker, pir_level2 == 1, current_time, startup_grace_period, 2);
+
         // Log ignored motion during grace period
         if (pir_state == 0 && startup_grace_period) {
             static int64_t last_grace_log = 0;
