@@ -468,7 +468,8 @@ static void process_sensor_motion(motion_tracker_t* t, bool motion_now, int64_t 
                     if (t->motion_event_count >= MOTION_CONFIRMATION_COUNT) {
                         t->motion_event_count = 0;  // Reset for next detection
 
-                        if (current_time - t->last_trigger_time < SENSOR_TRIGGER_COOLDOWN_MS) {
+                        if (t->last_trigger_time != 0 &&
+                                current_time - t->last_trigger_time < SENSOR_TRIGGER_COOLDOWN_MS) {
                             ESP_LOGI(TAG, "Sensor %d: motion confirmed but within cooldown, suppressing repeat trigger", sensor);
                         } else {
                             t->last_trigger_time = current_time;
