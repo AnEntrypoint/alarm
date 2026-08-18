@@ -577,26 +577,6 @@ static void alarm_task(void* arg)
     }
 }
 
-static void led_blink_test_task(void* arg)
-{
-    gpio_config_t io_conf = {
-        .intr_type = GPIO_INTR_DISABLE,
-        .mode = GPIO_MODE_OUTPUT,
-        .pin_bit_mask = (1ULL << LED_PIN),
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-    };
-    gpio_config(&io_conf);
-
-    int level = 0;
-    while (1) {
-        level = !level;
-        gpio_set_level(LED_PIN, level);
-        ESP_LOGI(TAG, "LED_TEST: GPIO%d set to %d", LED_PIN, level);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
-}
-
 void app_main(void)
 {
     // Initialize NVS
@@ -608,9 +588,6 @@ void app_main(void)
     ESP_ERROR_CHECK(ret);
     
     ESP_LOGI(TAG, "ESP32-C3 Alarm System Starting...");
-
-    // Isolated LED blink test - TEMPORARY, remove after verifying LED pin
-    xTaskCreate(led_blink_test_task, "led_blink_test", 2048, NULL, 5, NULL);
 
     // Create webhook queue
     webhook_queue = xQueueCreate(WEBHOOK_QUEUE_SIZE, sizeof(webhook_message_t));
