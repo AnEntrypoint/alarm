@@ -19,9 +19,9 @@
 #include "cJSON.h"
 
 // Configuration
-#define WIFI_SSID "Fort20Dodge"
-#define WIFI_PASSWORD "F1n477y_73g47"
-#define WEBHOOK_URL "https://discord.com/api/webhooks/1385912261025202266/JFabHnUkcx_8ZgGtocqQupntdYbffftMFgKLCKg4N0ZUyKqvf3AbXKiba-m5OtC0Ui28"
+#define WIFI_SSID "moonshine"
+#define WIFI_PASSWORD "moonshine"
+#define WEBHOOK_URL "https://discord.com/api/webhooks/1539235298897043466/gPxNgNLnEbZaFdgPEhTUf-mupktQ0xdvOpYlsExpQeE_hPrUxzuWoIV_iwiuq17UY-Ap"
 
 // Pin Configuration
 #define PIR_PIN GPIO_NUM_4
