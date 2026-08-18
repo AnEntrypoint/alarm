@@ -17,7 +17,6 @@
 #include "esp_timer.h"
 #include "esp_sntp.h"
 #include "cJSON.h"
-#include "led_strip.h"
 #include "secrets.h"
 
 // Pin Configuration
@@ -42,20 +41,6 @@ static const char *TAG = "ALARM_SYSTEM";
 // WiFi event group
 static EventGroupHandle_t s_wifi_event_group;
 const int WIFI_CONNECTED_BIT = BIT0;
-
-// Onboard WS2812 RGB LED
-static led_strip_handle_t led_strip;
-
-static void led_off(void)
-{
-    led_strip_clear(led_strip);
-}
-
-static void led_set_color(uint8_t r, uint8_t g, uint8_t b)
-{
-    led_strip_set_pixel(led_strip, 0, r, g, b);
-    led_strip_refresh(led_strip);
-}
 
 // Alarm state (shared: either sensor confirming motion drives the physical alarm)
 static bool alarm_active = false;
@@ -557,19 +542,11 @@ static void alarm_task(void* arg)
     io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
     gpio_config(&io_conf);
     
-    // Configure WS2812 RGB LED
-    // TEMPORARILY DISABLED to test whether GPIO8/RMT activity affects GPIO4
-#if 0
-    led_strip_config_t strip_config = {
-        .strip_gpio_num = LED_PIN,
-        .max_leds = 1,
-    };
-    led_strip_rmt_config_t rmt_config = {
-        .resolution_hz = 10 * 1000 * 1000,
-    };
-    led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip);
-    led_off();  // LED off initially
-#endif
+    // Drive the LED pin low as a plain GPIO to keep it from floating and
+    // showing a stuck/garbage color on the WS2812. LED control is otherwise disabled.
+    io_conf.pin_bit_mask = (1ULL << LED_PIN);
+    gpio_config(&io_conf);
+    gpio_set_level(LED_PIN, 0);
 
     gpio_set_level(ALARM_CONTROL_PIN, 0);
     
@@ -610,9 +587,6 @@ static void alarm_task(void* arg)
     int last_pir_level1 = -1;
     int last_pir_level2 = -1;
     int64_t startup_time = esp_timer_get_time() / 1000;
-    uint32_t last_pir1_edge_seen = pir1_edge_count;
-    uint32_t last_pir2_edge_seen = pir2_edge_count;
-    int64_t led_pulse_until = 0;
 
     while (1) {
         int pir_level1 = gpio_get_level(PIR_PIN);
@@ -635,28 +609,6 @@ static void alarm_task(void* arg)
             last_pir_state = pir_state;
         }
 
-        // Real-time LED pulse: purple on any PIR1 edge, green on any PIR2 edge
-        // TEMPORARILY DISABLED to test whether WS2812/RMT activity is coupling noise onto GPIO3
-#if 0
-        {
-            uint32_t p1 = pir1_edge_count;
-            uint32_t p2 = pir2_edge_count;
-            if (p1 != last_pir1_edge_seen) {
-                last_pir1_edge_seen = p1;
-                led_set_color(24, 0, 24);  // purple
-                led_pulse_until = current_time + 150;
-            }
-            if (p2 != last_pir2_edge_seen) {
-                last_pir2_edge_seen = p2;
-                led_set_color(0, 32, 0);  // green
-                led_pulse_until = current_time + 150;
-            }
-            if (led_pulse_until != 0 && current_time >= led_pulse_until) {
-                led_off();
-                led_pulse_until = 0;
-            }
-        }
-#endif
         {
             static int64_t last_edge_log = 0;
             if (current_time - last_edge_log > 3000) {
