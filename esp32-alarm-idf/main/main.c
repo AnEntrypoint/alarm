@@ -57,6 +57,20 @@ static int64_t first_motion_time = 0;
 static int64_t motion_start_time = 0;
 static bool continuous_motion = false;
 
+// Diagnostic: interrupt-driven edge counters, cannot miss a pulse regardless of poll timing
+static volatile uint32_t pir1_edge_count = 0;
+static volatile uint32_t pir2_edge_count = 0;
+
+static void IRAM_ATTR pir1_isr_handler(void* arg)
+{
+    pir1_edge_count++;
+}
+
+static void IRAM_ATTR pir2_isr_handler(void* arg)
+{
+    pir2_edge_count++;
+}
+
 // Message queue for webhook retries
 static QueueHandle_t webhook_queue;
 #define WEBHOOK_QUEUE_SIZE 10
@@ -413,14 +427,17 @@ static void alarm_task(void* arg)
 {
     // Configure PIR sensor input with pull-down
     gpio_config_t io_conf = {
-        .intr_type = GPIO_INTR_DISABLE,
+        .intr_type = GPIO_INTR_ANYEDGE,
         .mode = GPIO_MODE_INPUT,
         .pin_bit_mask = (1ULL << PIR_PIN) | (1ULL << PIR_PIN2),
         .pull_down_en = GPIO_PULLDOWN_ENABLE,  // Enable pull-down to prevent floating
         .pull_up_en = GPIO_PULLUP_DISABLE,
     };
     gpio_config(&io_conf);
-    
+    gpio_install_isr_service(0);
+    gpio_isr_handler_add(PIR_PIN, pir1_isr_handler, NULL);
+    gpio_isr_handler_add(PIR_PIN2, pir2_isr_handler, NULL);
+
     // Configure alarm output
     io_conf.mode = GPIO_MODE_OUTPUT;
     io_conf.pin_bit_mask = (1ULL << ALARM_CONTROL_PIN);
@@ -495,6 +512,14 @@ static void alarm_task(void* arg)
             ESP_LOGI(TAG, "PIR state changed: %d -> %d", last_pir_state, pir_state);
             last_pir_state = pir_state;
             gpio_set_level(LED_PIN, pir_state);  // Board LED is active-low: LOW = on. LED ON when motion (pir_state=0)
+        }
+        {
+            static int64_t last_edge_log = 0;
+            if (current_time - last_edge_log > 3000) {
+                last_edge_log = current_time;
+                ESP_LOGI(TAG, "EDGE_COUNT: PIR1(GPIO%d)=%lu PIR2(GPIO%d)=%lu",
+                        PIR_PIN, (unsigned long)pir1_edge_count, PIR_PIN2, (unsigned long)pir2_edge_count);
+            }
         }
 
         // Check for startup grace period
