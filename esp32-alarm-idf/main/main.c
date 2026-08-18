@@ -31,7 +31,7 @@
 #define PIR_DEBOUNCE_MS 5000     // 5 seconds
 
 // False Alarm Reduction Configuration
-#define MOTION_CONFIRMATION_WINDOW_MS 10000  // 10 second window to confirm motion
+#define MOTION_CONFIRMATION_WINDOW_MS 20000  // 20 second window to confirm motion (must comfortably fit MOTION_CONFIRMATION_COUNT events spaced PIR_DEBOUNCE_MS apart)
 #define MOTION_CONFIRMATION_COUNT 3          // Require 3 motion events to trigger (raised from 2 to reject regular low-amplitude noise)
 #define PIR_STABILIZATION_TIME_MS 15000     // 15 seconds for PIR to stabilize
 #define STARTUP_GRACE_PERIOD_MS 45000       // 45 seconds grace period after startup
