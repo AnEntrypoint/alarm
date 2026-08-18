@@ -17,6 +17,7 @@
 #include "esp_timer.h"
 #include "esp_sntp.h"
 #include "cJSON.h"
+#include "led_strip.h"
 
 // Configuration
 #define WIFI_SSID "moonshine"
@@ -45,6 +46,20 @@ static const char *TAG = "ALARM_SYSTEM";
 // WiFi event group
 static EventGroupHandle_t s_wifi_event_group;
 const int WIFI_CONNECTED_BIT = BIT0;
+
+// Onboard WS2812 RGB LED
+static led_strip_handle_t led_strip;
+
+static void led_off(void)
+{
+    led_strip_clear(led_strip);
+}
+
+static void led_set_color(uint8_t r, uint8_t g, uint8_t b)
+{
+    led_strip_set_pixel(led_strip, 0, r, g, b);
+    led_strip_refresh(led_strip);
+}
 
 // Alarm state
 static bool alarm_active = false;
@@ -474,12 +489,18 @@ static void alarm_task(void* arg)
     io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
     gpio_config(&io_conf);
     
-    // Configure LED output
-    io_conf.pin_bit_mask = (1ULL << LED_PIN);
-    gpio_config(&io_conf);
-    
+    // Configure WS2812 RGB LED
+    led_strip_config_t strip_config = {
+        .strip_gpio_num = LED_PIN,
+        .max_leds = 1,
+    };
+    led_strip_rmt_config_t rmt_config = {
+        .resolution_hz = 10 * 1000 * 1000,
+    };
+    led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip);
+
     gpio_set_level(ALARM_CONTROL_PIN, 0);
-    gpio_set_level(LED_PIN, 1);  // LED off initially (active-low)
+    led_off();  // LED off initially
     
     // Let PIR sensor stabilize after power-up
     ESP_LOGI(TAG, "Waiting for PIR sensor to stabilize (%d seconds)...", 
@@ -492,7 +513,11 @@ static void alarm_task(void* arg)
         int pir_level2 = gpio_get_level(PIR_PIN2);
         ESP_LOGI(TAG, "PIR stabilization %d/%d: GPIO%d = %d, GPIO%d = %d",
                 i+1, stabilization_steps, PIR_PIN, pir_level, PIR_PIN2, pir_level2);
-        gpio_set_level(LED_PIN, !(pir_level || pir_level2));  // Show inverted PIR state on LED during stabilization
+        if (pir_level || pir_level2) {
+            led_set_color(32, 0, 0);  // dim red during stabilization while motion is seen
+        } else {
+            led_off();
+        }
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 
@@ -540,7 +565,11 @@ static void alarm_task(void* arg)
         if (pir_state != last_pir_state) {
             ESP_LOGI(TAG, "PIR state changed: %d -> %d", last_pir_state, pir_state);
             last_pir_state = pir_state;
-            gpio_set_level(LED_PIN, pir_state);  // Board LED is active-low: LOW = on. LED ON when motion (pir_state=0)
+            if (pir_state == 0) {
+                led_set_color(32, 0, 0);  // red: motion
+            } else {
+                led_off();
+            }
         }
         {
             static int64_t last_edge_log = 0;
