@@ -25,9 +25,9 @@
 
 // Pin Configuration
 #define PIR_PIN GPIO_NUM_4
-#define PIR_PIN2 GPIO_NUM_2
+#define PIR_PIN2 GPIO_NUM_3
 #define ALARM_CONTROL_PIN GPIO_NUM_10
-#define LED_PIN GPIO_NUM_8  // WS2812 addressable RGB LED on ESP32-C3 Super Mini Plus
+#define LED_PIN GPIO_NUM_8
 
 // Timing Configuration
 #define ALARM_DURATION_MS 30000  // 30 seconds
