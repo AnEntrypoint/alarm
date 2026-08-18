@@ -612,6 +612,9 @@ static void alarm_task(void* arg)
     int last_pir_level1 = -1;
     int last_pir_level2 = -1;
     int64_t startup_time = esp_timer_get_time() / 1000;
+    uint32_t last_pir1_edge_seen = pir1_edge_count;
+    uint32_t last_pir2_edge_seen = pir2_edge_count;
+    int64_t led_pulse_until = 0;
 
     while (1) {
         int pir_level1 = gpio_get_level(PIR_PIN);
@@ -629,14 +632,28 @@ static void alarm_task(void* arg)
             last_pir_level2 = pir_level2;
         }
 
-        // Log PIR state changes for debugging and update LED
         if (pir_state != last_pir_state) {
             ESP_LOGI(TAG, "PIR state changed: %d -> %d", last_pir_state, pir_state);
             last_pir_state = pir_state;
-            if (pir_state == 0) {
-                led_set_color(32, 0, 0);  // red: motion
-            } else {
+        }
+
+        // Real-time LED pulse: purple on any PIR1 edge, green on any PIR2 edge
+        {
+            uint32_t p1 = pir1_edge_count;
+            uint32_t p2 = pir2_edge_count;
+            if (p1 != last_pir1_edge_seen) {
+                last_pir1_edge_seen = p1;
+                led_set_color(24, 0, 24);  // purple
+                led_pulse_until = current_time + 150;
+            }
+            if (p2 != last_pir2_edge_seen) {
+                last_pir2_edge_seen = p2;
+                led_set_color(0, 32, 0);  // green
+                led_pulse_until = current_time + 150;
+            }
+            if (led_pulse_until != 0 && current_time >= led_pulse_until) {
                 led_off();
+                led_pulse_until = 0;
             }
         }
         {
