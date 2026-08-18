@@ -18,12 +18,7 @@
 #include "esp_sntp.h"
 #include "cJSON.h"
 #include "led_strip.h"
-
-// Configuration
-#define WIFI_SSID "moonshine"
-#define WIFI_PASSWORD "moonshine"
-#define WEBHOOK_URL_PIR1 "https://discord.com/api/webhooks/1539235298897043466/gPxNgNLnEbZaFdgPEhTUf-mupktQ0xdvOpYlsExpQeE_hPrUxzuWoIV_iwiuq17UY-Ap"
-#define WEBHOOK_URL_PIR2 "https://discord.com/api/webhooks/1539329434505453683/xKC_ZdHxAFZMarE-KQZneBYdORMpFMHUDevyeMRysONtjYpU9r9fIABuCyMXH8Pcbd5J"
+#include "secrets.h"
 
 // Pin Configuration
 #define PIR_PIN GPIO_NUM_4

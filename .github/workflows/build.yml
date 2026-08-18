@@ -12,6 +12,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Generate secrets.h
+        env:
+          WIFI_SSID: ${{ secrets.WIFI_SSID }}
+          WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
+          WEBHOOK_URL_PIR1: ${{ secrets.WEBHOOK_URL_PIR1 }}
+          WEBHOOK_URL_PIR2: ${{ secrets.WEBHOOK_URL_PIR2 }}
+        run: |
+          cat > esp32-alarm-idf/main/secrets.h <<EOF
+          #pragma once
+          #define WIFI_SSID "${WIFI_SSID}"
+          #define WIFI_PASSWORD "${WIFI_PASSWORD}"
+          #define WEBHOOK_URL_PIR1 "${WEBHOOK_URL_PIR1}"
+          #define WEBHOOK_URL_PIR2 "${WEBHOOK_URL_PIR2}"
+          EOF
       - name: esp-idf build
         uses: espressif/esp-idf-ci-action@v1
         with:

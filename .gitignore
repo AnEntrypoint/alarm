@@ -2,3 +2,4 @@ esp32-alarm-idf/build/
 esp32-alarm-idf/sdkconfig.old
 esp32-alarm/.pio/
 esp32-alarm-idf/sh.exe.stackdump
+esp32-alarm-idf/main/secrets.h
