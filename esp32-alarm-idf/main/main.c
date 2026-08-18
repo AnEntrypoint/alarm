@@ -32,10 +32,11 @@
 
 // False Alarm Reduction Configuration
 #define MOTION_CONFIRMATION_WINDOW_MS 10000  // 10 second window to confirm motion
-#define MOTION_CONFIRMATION_COUNT 2          // Require 2 motion events to trigger
+#define MOTION_CONFIRMATION_COUNT 3          // Require 3 motion events to trigger (raised from 2 to reject regular low-amplitude noise)
 #define PIR_STABILIZATION_TIME_MS 15000     // 15 seconds for PIR to stabilize
 #define STARTUP_GRACE_PERIOD_MS 45000       // 45 seconds grace period after startup
 #define MIN_MOTION_DURATION_MS 500          // Minimum time motion must be present
+#define SENSOR_TRIGGER_COOLDOWN_MS 120000   // Minimum time between a sensor's confirmed triggers, prevents runaway re-alarming from a noisy sensor
 
 static const char *TAG = "ALARM_SYSTEM";
 
@@ -54,6 +55,7 @@ typedef struct {
     int64_t first_motion_time;
     int64_t motion_start_time;
     bool continuous_motion;
+    int64_t last_trigger_time;
 } motion_tracker_t;
 
 static motion_tracker_t pir1_tracker = {0};
@@ -464,15 +466,21 @@ static void process_sensor_motion(motion_tracker_t* t, bool motion_now, int64_t 
 
                     // Check if we have enough confirmations
                     if (t->motion_event_count >= MOTION_CONFIRMATION_COUNT) {
-                        ESP_LOGI(TAG, "Sensor %d: motion confirmed after %d events", sensor, t->motion_event_count);
-                        queue_webhook_message_for_sensor("alarm_triggered", sensor);
                         t->motion_event_count = 0;  // Reset for next detection
 
-                        if (!alarm_active) {
-                            alarm_active = true;
-                            alarm_start_time = current_time;
-                            gpio_set_level(ALARM_CONTROL_PIN, 1);
-                            ESP_LOGI(TAG, "ALARM ACTIVATED! (triggered by sensor %d)", sensor);
+                        if (current_time - t->last_trigger_time < SENSOR_TRIGGER_COOLDOWN_MS) {
+                            ESP_LOGI(TAG, "Sensor %d: motion confirmed but within cooldown, suppressing repeat trigger", sensor);
+                        } else {
+                            t->last_trigger_time = current_time;
+                            ESP_LOGI(TAG, "Sensor %d: motion confirmed after %d events", sensor, MOTION_CONFIRMATION_COUNT);
+                            queue_webhook_message_for_sensor("alarm_triggered", sensor);
+
+                            if (!alarm_active) {
+                                alarm_active = true;
+                                alarm_start_time = current_time;
+                                gpio_set_level(ALARM_CONTROL_PIN, 1);
+                                ESP_LOGI(TAG, "ALARM ACTIVATED! (triggered by sensor %d)", sensor);
+                            }
                         }
                     }
                 }
