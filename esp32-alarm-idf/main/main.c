@@ -26,6 +26,7 @@
 // Pin Configuration
 #define PIR_PIN GPIO_NUM_4
 #define PIR_PIN2 GPIO_NUM_2
+#define PIR_PIN2_ALT GPIO_NUM_3  // diagnostic: candidate pin if GPIO2 silkscreen doesn't match actual GPIO
 #define ALARM_CONTROL_PIN GPIO_NUM_10
 #define LED_PIN GPIO_NUM_8  // Onboard LED on ESP32-C3 Super Mini
 
@@ -415,7 +416,7 @@ static void alarm_task(void* arg)
     gpio_config_t io_conf = {
         .intr_type = GPIO_INTR_DISABLE,
         .mode = GPIO_MODE_INPUT,
-        .pin_bit_mask = (1ULL << PIR_PIN) | (1ULL << PIR_PIN2),
+        .pin_bit_mask = (1ULL << PIR_PIN) | (1ULL << PIR_PIN2) | (1ULL << PIR_PIN2_ALT),
         .pull_down_en = GPIO_PULLDOWN_ENABLE,  // Enable pull-down to prevent floating
         .pull_up_en = GPIO_PULLUP_DISABLE,
     };
@@ -472,11 +473,13 @@ static void alarm_task(void* arg)
     int last_pir_state = -1;
     int last_pir_level1 = -1;
     int last_pir_level2 = -1;
+    int last_pir_level2_alt = -1;
     int64_t startup_time = esp_timer_get_time() / 1000;
 
     while (1) {
         int pir_level1 = gpio_get_level(PIR_PIN);
         int pir_level2 = gpio_get_level(PIR_PIN2);
+        int pir_level2_alt = gpio_get_level(PIR_PIN2_ALT);
         int pir_state = (pir_level1 == 1 || pir_level2 == 1) ? 0 : 1;  // motion if either PIR is HIGH (standard PIR polarity); pir_state 0 = motion, 1 = idle
         int64_t current_time = esp_timer_get_time() / 1000; // Convert to ms
 
@@ -489,14 +492,28 @@ static void alarm_task(void* arg)
             ESP_LOGI(TAG, "GPIO%d (PIR2) changed: %d -> %d", PIR_PIN2, last_pir_level2, pir_level2);
             last_pir_level2 = pir_level2;
         }
+        if (pir_level2_alt != last_pir_level2_alt) {
+            ESP_LOGI(TAG, "GPIO%d (PIR2_ALT diagnostic) changed: %d -> %d", PIR_PIN2_ALT, last_pir_level2_alt, pir_level2_alt);
+            last_pir_level2_alt = pir_level2_alt;
+        }
 
         // Log PIR state changes for debugging and update LED
         if (pir_state != last_pir_state) {
             ESP_LOGI(TAG, "PIR state changed: %d -> %d", last_pir_state, pir_state);
             last_pir_state = pir_state;
-            gpio_set_level(LED_PIN, !pir_state);  // LED ON when motion (PIR=0)
+            int led_level = !pir_state;
+            gpio_set_level(LED_PIN, led_level);  // LED ON when motion (PIR=0)
+            ESP_LOGI(TAG, "LED: set GPIO%d to %d", LED_PIN, led_level);
         }
-        
+        {
+            static int64_t last_heartbeat = 0;
+            if (current_time - last_heartbeat > 2000) {
+                last_heartbeat = current_time;
+                ESP_LOGI(TAG, "HEARTBEAT: pir_state=%d led_should_be=%d gpio8_actual=%d",
+                        pir_state, !pir_state, gpio_get_level(LED_PIN));
+            }
+        }
+
         // Check for startup grace period
         bool startup_grace_period = (current_time - startup_time < STARTUP_GRACE_PERIOD_MS);
         
