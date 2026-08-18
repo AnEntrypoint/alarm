@@ -73,19 +73,6 @@ static void IRAM_ATTR pir2_isr_handler(void* arg)
     pir2_edge_count++;
 }
 
-// Diagnostic: scan every other usable GPIO for activity, in case wiring lands elsewhere
-#define SCAN_PIN_COUNT 8
-static const gpio_num_t scan_pins[SCAN_PIN_COUNT] = {
-    GPIO_NUM_0, GPIO_NUM_1, GPIO_NUM_5, GPIO_NUM_6, GPIO_NUM_7, GPIO_NUM_9, GPIO_NUM_20, GPIO_NUM_21
-};
-static volatile uint32_t scan_edge_count[SCAN_PIN_COUNT] = {0};
-
-static void IRAM_ATTR scan_isr_handler(void* arg)
-{
-    int idx = (int)(intptr_t)arg;
-    scan_edge_count[idx]++;
-}
-
 // Message queue for webhook retries
 static QueueHandle_t webhook_queue;
 #define WEBHOOK_QUEUE_SIZE 10
@@ -520,22 +507,6 @@ static void alarm_task(void* arg)
     gpio_isr_handler_add(PIR_PIN, pir1_isr_handler, NULL);
     gpio_isr_handler_add(PIR_PIN2, pir2_isr_handler, NULL);
 
-    // Configure diagnostic scan pins
-    gpio_config_t scan_conf = {
-        .intr_type = GPIO_INTR_ANYEDGE,
-        .mode = GPIO_MODE_INPUT,
-        .pin_bit_mask = 0,
-        .pull_down_en = GPIO_PULLDOWN_ENABLE,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-    };
-    for (int i = 0; i < SCAN_PIN_COUNT; i++) {
-        scan_conf.pin_bit_mask |= (1ULL << scan_pins[i]);
-    }
-    gpio_config(&scan_conf);
-    for (int i = 0; i < SCAN_PIN_COUNT; i++) {
-        gpio_isr_handler_add(scan_pins[i], scan_isr_handler, (void*)(intptr_t)i);
-    }
-
     // Configure alarm output
     io_conf.mode = GPIO_MODE_OUTPUT;
     io_conf.pin_bit_mask = (1ULL << ALARM_CONTROL_PIN);
@@ -639,13 +610,6 @@ static void alarm_task(void* arg)
                 last_edge_log = current_time;
                 ESP_LOGI(TAG, "EDGE_COUNT: PIR1(GPIO%d)=%lu PIR2(GPIO%d)=%lu",
                         PIR_PIN, (unsigned long)pir1_edge_count, PIR_PIN2, (unsigned long)pir2_edge_count);
-                char scan_buf[160];
-                int off = 0;
-                for (int i = 0; i < SCAN_PIN_COUNT; i++) {
-                    off += snprintf(scan_buf + off, sizeof(scan_buf) - off, "GPIO%d=%lu ",
-                            scan_pins[i], (unsigned long)scan_edge_count[i]);
-                }
-                ESP_LOGI(TAG, "SCAN_EDGE_COUNT: %s", scan_buf);
             }
         }
 
