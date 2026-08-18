@@ -558,6 +558,8 @@ static void alarm_task(void* arg)
     gpio_config(&io_conf);
     
     // Configure WS2812 RGB LED
+    // TEMPORARILY DISABLED to test whether GPIO8/RMT activity affects GPIO4
+#if 0
     led_strip_config_t strip_config = {
         .strip_gpio_num = LED_PIN,
         .max_leds = 1,
@@ -566,9 +568,10 @@ static void alarm_task(void* arg)
         .resolution_hz = 10 * 1000 * 1000,
     };
     led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip);
+    led_off();  // LED off initially
+#endif
 
     gpio_set_level(ALARM_CONTROL_PIN, 0);
-    led_off();  // LED off initially
     
     // Let PIR sensor stabilize after power-up
     ESP_LOGI(TAG, "Waiting for PIR sensor to stabilize (%d seconds)...", 
@@ -581,11 +584,6 @@ static void alarm_task(void* arg)
         int pir_level2 = gpio_get_level(PIR_PIN2);
         ESP_LOGI(TAG, "PIR stabilization %d/%d: GPIO%d = %d, GPIO%d = %d",
                 i+1, stabilization_steps, PIR_PIN, pir_level, PIR_PIN2, pir_level2);
-        if (pir_level || pir_level2) {
-            led_set_color(32, 0, 0);  // dim red during stabilization while motion is seen
-        } else {
-            led_off();
-        }
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 
