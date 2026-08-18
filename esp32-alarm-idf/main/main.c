@@ -50,7 +50,6 @@ const int WIFI_CONNECTED_BIT = BIT0;
 static bool alarm_active = false;
 static int64_t alarm_start_time = 0;
 static int64_t last_motion_time = 0;
-static bool motion_detected = false;
 
 // Motion confirmation tracking
 static int motion_event_count = 0;
@@ -498,7 +497,7 @@ static void alarm_task(void* arg)
             
             // Check if motion has been continuous for minimum duration
             if ((current_time - motion_start_time) >= MIN_MOTION_DURATION_MS) {
-                if (!motion_detected && !startup_grace_period &&
+                if (!startup_grace_period &&
                     (current_time - last_motion_time > PIR_DEBOUNCE_MS)) {
                     
                     // First motion event or new motion after debounce
@@ -528,14 +527,12 @@ static void alarm_task(void* arg)
                         }
                     }
                     
-                    motion_detected = true;
                     last_motion_time = current_time;
                 }
             }
         } else {  // No motion (pir_state == 1)
             continuous_motion = false;
-            motion_detected = false;
-            
+
             // Reset motion count if confirmation window expired
             if (motion_event_count > 0 && 
                 (current_time - first_motion_time > MOTION_CONFIRMATION_WINDOW_MS)) {
