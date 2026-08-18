@@ -577,6 +577,40 @@ static void alarm_task(void* arg)
     }
 }
 
+static void gpio_scan_task(void* arg)
+{
+    const gpio_num_t candidates[] = {
+        GPIO_NUM_0, GPIO_NUM_1, GPIO_NUM_5, GPIO_NUM_6, GPIO_NUM_7, GPIO_NUM_9
+    };
+    const int n = sizeof(candidates) / sizeof(candidates[0]);
+    int last_level[6];
+
+    gpio_config_t io_conf = {
+        .intr_type = GPIO_INTR_DISABLE,
+        .mode = GPIO_MODE_INPUT,
+        .pin_bit_mask = 0,
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+    };
+    for (int i = 0; i < n; i++) {
+        io_conf.pin_bit_mask |= (1ULL << candidates[i]);
+        last_level[i] = -1;
+    }
+    gpio_config(&io_conf);
+
+    ESP_LOGI(TAG, "GPIO_SCAN: watching GPIO0,1,5,6,7,9 for changes");
+    while (1) {
+        for (int i = 0; i < n; i++) {
+            int level = gpio_get_level(candidates[i]);
+            if (level != last_level[i]) {
+                ESP_LOGI(TAG, "GPIO_SCAN: GPIO%d changed: %d -> %d", candidates[i], last_level[i], level);
+                last_level[i] = level;
+            }
+        }
+        vTaskDelay(200 / portTICK_PERIOD_MS);
+    }
+}
+
 void app_main(void)
 {
     // Initialize NVS
@@ -607,4 +641,7 @@ void app_main(void)
     
     // Create alarm task
     xTaskCreate(alarm_task, "alarm_task", 4096, NULL, 5, NULL);
+
+    // Temporary diagnostic: scan other GPIOs for the AM312 signal
+    xTaskCreate(gpio_scan_task, "gpio_scan", 2048, NULL, 5, NULL);
 }
