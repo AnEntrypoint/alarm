@@ -15,7 +15,7 @@ jobs:
       - name: esp-idf build
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: latest
+          esp_idf_version: v5.3
           target: esp32c3
           path: esp32-alarm-idf
       - name: Upload firmware
