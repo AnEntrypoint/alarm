@@ -26,11 +26,11 @@
 #define ALARM_CONTROL_PIN GPIO_NUM_10
 #define LED_PIN GPIO_NUM_8
 
-// PIR2 (GPIO3) has measured a metronomic ~1100ms noise pulse every ~2-3s continuously,
-// including with its lens fully covered and while motionless. Not filterable by duration
-// or debounce. Disable it as an alarm/webhook source until the module is replaced; its
-// raw signal is still read and logged for diagnostics. Flip to 1 once hardware is fixed.
-#define PIR2_ALARM_ENABLED 0
+// Root cause of the earlier metronomic ~1100ms PIR2 pulse artifact was GPIO_INTR_ANYEDGE
+// enabled on GPIO3 interacting badly with electrical bounce on the line; reverted to
+// polling-only (see alarm_task) and confirmed clean (4 transitions/90s vs ~50/90s before).
+// PIR2 re-enabled as an alarm/webhook source.
+#define PIR2_ALARM_ENABLED 1
 
 // Timing Configuration
 #define ALARM_DURATION_MS 30000  // 30 seconds
