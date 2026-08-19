@@ -26,6 +26,12 @@
 #define ALARM_CONTROL_PIN GPIO_NUM_10
 #define LED_PIN GPIO_NUM_8
 
+// PIR2 (GPIO3) has measured a metronomic ~1100ms noise pulse every ~2-3s continuously,
+// including with its lens fully covered and while motionless. Not filterable by duration
+// or debounce. Disable it as an alarm/webhook source until the module is replaced; its
+// raw signal is still read and logged for diagnostics. Flip to 1 once hardware is fixed.
+#define PIR2_ALARM_ENABLED 0
+
 // Timing Configuration
 #define ALARM_DURATION_MS 30000  // 30 seconds
 #define PIR_DEBOUNCE_MS 5000     // 5 seconds
@@ -595,7 +601,11 @@ static void alarm_task(void* arg)
     while (1) {
         int pir_level1 = gpio_get_level(PIR_PIN);
         int pir_level2 = gpio_get_level(PIR_PIN2);
+#if PIR2_ALARM_ENABLED
         int pir_state = (pir_level1 == 1 || pir_level2 == 1) ? 0 : 1;  // motion if either PIR is HIGH (standard PIR polarity); pir_state 0 = motion, 1 = idle
+#else
+        int pir_state = (pir_level1 == 1) ? 0 : 1;  // PIR2 excluded from alarm state, see PIR2_ALARM_ENABLED
+#endif
         int64_t current_time = esp_timer_get_time() / 1000; // Convert to ms
 
         // Log individual PIR pin changes for debugging which sensor triggered
@@ -627,7 +637,9 @@ static void alarm_task(void* arg)
 
         // Motion detection with confirmation logic, tracked independently per sensor
         process_sensor_motion(&pir1_tracker, pir_level1 == 1, current_time, startup_grace_period, 1);
+#if PIR2_ALARM_ENABLED
         process_sensor_motion(&pir2_tracker, pir_level2 == 1, current_time, startup_grace_period, 2);
+#endif
 
         // Log ignored motion during grace period
         if (pir_state == 0 && startup_grace_period) {
