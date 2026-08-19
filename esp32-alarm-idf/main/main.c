@@ -671,8 +671,6 @@ static void alarm_task(void* arg)
             alarm_active = false;
             gpio_set_level(ALARM_CONTROL_PIN, 0);
             ESP_LOGI(TAG, "Alarm deactivated");
-            
-            queue_webhook_message("alarm_stopped");
         }
         
         vTaskDelay(100 / portTICK_PERIOD_MS);
