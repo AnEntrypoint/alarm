@@ -509,15 +509,28 @@ static void process_sensor_motion(motion_tracker_t* t, bool motion_now, int64_t 
 
 static void alarm_task(void* arg)
 {
-    // Configure PIR sensor input with pull-down
+    // Configure PIR1 (AM312) input with pull-down: this sensor's known-working config.
     gpio_config_t io_conf = {
         .intr_type = GPIO_INTR_ANYEDGE,
         .mode = GPIO_MODE_INPUT,
-        .pin_bit_mask = (1ULL << PIR_PIN) | (1ULL << PIR_PIN2),
-        .pull_down_en = GPIO_PULLDOWN_ENABLE,  // Enable pull-down to prevent floating
+        .pin_bit_mask = (1ULL << PIR_PIN),
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
         .pull_up_en = GPIO_PULLUP_DISABLE,
     };
     gpio_config(&io_conf);
+
+    // Configure PIR2 input with pull-up instead of pull-down: testing whether an
+    // internal pull-down was fighting this board's own output stage / pull network,
+    // producing the observed fixed-width ~1100ms pulse artifact.
+    gpio_config_t io_conf2 = {
+        .intr_type = GPIO_INTR_ANYEDGE,
+        .mode = GPIO_MODE_INPUT,
+        .pin_bit_mask = (1ULL << PIR_PIN2),
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+    };
+    gpio_config(&io_conf2);
+
     gpio_install_isr_service(0);
     gpio_isr_handler_add(PIR_PIN, pir1_isr_handler, NULL);
     gpio_isr_handler_add(PIR_PIN2, pir2_isr_handler, NULL);
